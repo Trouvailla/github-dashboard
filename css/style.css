@@ -168,21 +168,6 @@ body {
 .data-table tr.clickable { cursor: pointer; }
 .data-table tr.clickable:hover { background: #e8f0fe; }
 
-/* ---- KPI Tabs ---- */
-.kpi-tabs {
-  display: flex; gap: 0; background: var(--card);
-  border-radius: var(--radius); overflow: hidden;
-  margin-bottom: 16px; box-shadow: var(--shadow);
-}
-.kpi-tab {
-  flex: 1; padding: 10px 16px; border: none;
-  background: var(--card); font-size: 13px; font-weight: 500;
-  cursor: pointer; transition: .15s;
-  border-bottom: 2px solid transparent;
-}
-.kpi-tab:hover { background: #f1f3f4; }
-.kpi-tab.active { border-bottom-color: var(--primary); color: var(--primary); font-weight: 600; }
-
 /* ---- Placeholder ---- */
 .placeholder-block {
   text-align: center; padding: 60px 20px;
