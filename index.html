@@ -3,139 +3,111 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GitHub 数据看板</title>
+  <title>数据看板 — 整商 & B端KPI</title>
   <link rel="stylesheet" href="css/style.css" />
-  <!-- SheetJS：解析 .xlsx -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
-  <!-- Chart.js：图表 -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
 <!-- 配置弹窗 -->
-<div id="config-overlay" class="overlay">
+<div id="config-overlay" class="overlay hidden">
   <div class="modal">
-    <h2>🔧 仓库配置</h2>
-    <p class="subtitle">请填写你的 GitHub 仓库信息，数据将存储在此仓库中。</p>
+    <h2>Settings 仓库配置</h2>
+    <p class="subtitle">填写 GitHub 仓库信息，数据将存储在此仓库中</p>
     <div class="form-group">
-        <label>仓库所属（用户名 / 组织名）</label>
-        <input id="cfg-owner" type="text" placeholder="例如：your-github-username" />
-      </div>
-      <div class="form-group">
-        <label>仓库名称</label>
-        <input id="cfg-repo" type="text" placeholder="例如：my-dashboard-data" />
-      </div>
-      <div class="form-group">
-        <label>分支名称</label>
-        <input id="cfg-branch" type="text" value="main" />
-      </div>
-      <div class="form-group">
-        <label>GitHub Token（需要 repo 权限）</label>
-        <input id="cfg-token" type="password" placeholder="ghp_xxxxxxxxxxxx" />
-        <span class="hint">在 GitHub → Settings → Developer settings → Personal access tokens 生成</span>
-      </div>
-      <button id="btn-save-config" class="btn btn-primary">保存配置</button>
+      <label>仓库所属</label>
+      <input id="cfg-owner" placeholder="your-github-username" />
     </div>
+    <div class="form-group">
+      <label>仓库名称</label>
+      <input id="cfg-repo" placeholder="my-dashboard-data" />
+    </div>
+    <div class="form-group">
+      <label>分支</label>
+      <input id="cfg-branch" value="main" />
+    </div>
+    <div class="form-group">
+      <label>GitHub Token（需 repo 权限）</label>
+      <input id="cfg-token" type="password" placeholder="ghp_xxxx" />
+    </div>
+    <button id="btn-save-config" class="btn btn-primary">Save</button>
   </div>
+</div>
 
-  <!-- 顶部导航 -->
-  <header class="topbar">
-    <div class="brand">
+<!-- 整体布局 -->
+<div class="app-layout">
+
+  <!-- 左侧导航 -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
       <span class="logo">📊</span>
-      <span class="title">GitHub 数据看板</span>
+      <span>数据看板</span>
     </div>
-    <div class="actions">
-      <button id="btn-show-upload" class="btn btn-accent">+ 上传 Excel</button>
-      <button id="btn-show-config" class="btn btn-ghost">⚙️ 设置</button>
-    </div>
-  </header>
-
-  <!-- 主体 -->
-  <main class="main-layout">
-
-    <!-- 左侧：文件列表 -->
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <h3>📁 数据文件</h3>
-        <button id="btn-refresh-files" class="btn-icon" title="刷新文件列表">🔄</button>
+    <nav class="sidebar-nav">
+      <div class="nav-item active" data-panel="panel1">
+        <span class="nav-icon">📊</span>
+        <span class="nav-label">整商面板</span>
+      </div>
+      <div class="nav-item" data-panel="panel2">
+        <span class="nav-icon">🎯</span>
+        <span class="nav-label">B端KPI面板</span>
+      </div>
+    </nav>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-header">
+        <span>📁 数据文件</span>
+        <button id="btn-refresh-files" class="btn-icon" title="refresh">🔄</button>
       </div>
       <div id="file-list" class="file-list">
-        <div class="empty-tip">请先配置仓库信息</div>
-      </div>
-    </aside>
-
-    <!-- 右侧：看板内容 -->
-    <section class="content">
-      <!-- 文件信息栏 -->
-      <div id="file-info" class="file-info hidden">
-        <span id="current-file-name" class="file-name"></span>
-        <span id="current-file-time" class="file-time"></span>
-        <button id="btn-refresh-data" class="btn btn-sm">🔄 刷新数据</button>
-      </div>
-
-      <!-- 数据表格 -->
-      <div class="card">
-        <div class="card-header">
-          <h2>📋 数据预览</h2>
-          <span id="row-count" class="badge"></span>
-        </div>
-        <div id="table-container" class="table-wrap">
-          <div class="placeholder">请从左侧选择或上传一个 .xlsx 文件</div>
-        </div>
-      </div>
-
-      <!-- 图表区域 -->
-      <div class="card">
-        <div class="card-header">
-          <h2>📈 图表展示</h2>
-          <div class="chart-controls">
-            <label>图表类型：</label>
-            <select id="chart-type">
-              <option value="bar">柱状图</option>
-              <option value="line">折线图</option>
-              <option value="pie">饼图</option>
-              <option value="doughnut">环形图</option>
-            </select>
-            <label>X 轴：</label>
-            <select id="chart-x-col"></select>
-            <label>Y 轴：</label>
-            <select id="chart-y-col" multiple></select>
-          </div>
-        </div>
-        <div class="chart-canvas-wrap">
-          <canvas id="chart-canvas"></canvas>
-          <div id="chart-placeholder" class="placeholder">请先选择数据列，然后点击「生成图表」</div>
-        </div>
-        <button id="btn-generate-chart" class="btn btn-primary" style="margin-top:12px;">生成图表</button>
-      </div>
-    </section>
-
-  </main>
-
-  <!-- 上传弹窗 -->
-  <div id="upload-overlay" class="overlay hidden">
-    <div class="modal">
-      <h2>📤 上传 Excel 文件</h2>
-      <div class="upload-area" id="upload-area">
-        <input type="file" id="file-input" accept=".xlsx,.xls" hidden />
-        <div class="upload-icon">📄</div>
-        <p>点击选择或拖拽 .xlsx / .xls 文件到此区域</p>
-        <span class="hint">文件将直接提交到 GitHub 仓库的 <code>data/</code> 目录</span>
-      </div>
-      <div id="upload-progress" class="hidden">
-        <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
-        <p id="progress-text"></p>
-      </div>
-      <div class="modal-actions">
-        <button id="btn-cancel-upload" class="btn btn-ghost">取消</button>
-        <button id="btn-confirm-upload" class="btn btn-primary" disabled>确认上传</button>
+        <div class="empty-tip">请先配置仓库</div>
       </div>
     </div>
+  </aside>
+
+  <!-- 主内容 -->
+  <main class="main-content">
+    <header class="topbar">
+      <h1 id="panel-title">整商面板</h1>
+      <div class="topbar-actions">
+        <button id="btn-show-upload" class="btn btn-accent">+ 上传 Excel</button>
+        <button id="btn-show-config" class="btn btn-ghost">Settings</button>
+      </div>
+    </header>
+    <div id="panel-content" class="panel-content">
+      <div class="placeholder-block">请先在左上角配置仓库信息（Settings），然后上传 Excel 文件</div>
+    </div>
+  </main>
+
+</div>
+
+<!-- 上传弹窗 -->
+<div id="upload-overlay" class="overlay hidden">
+  <div class="modal">
+    <h2>Upload Excel</h2>
+    <div id="upload-area" class="upload-area">
+      <input type="file" id="file-input" accept=".xlsx,.xls" hidden />
+      <div class="upload-icon">📄</div>
+      <p>Click or drag .xlsx file here</p>
+      <span class="hint">上传到 GitHub 仓库 data/ 目录</span>
+    </div>
+    <div id="upload-progress" class="hidden">
+      <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+      <p id="progress-text"></p>
+    </div>
+    <div class="modal-actions">
+      <button id="btn-cancel-upload" class="btn btn-ghost">Cancel</button>
+      <button id="btn-confirm-upload" class="btn btn-primary" disabled>Upload</button>
+    </div>
   </div>
+</div>
 
-  <!-- Toast 通知 -->
-  <div id="toast-container"></div>
+<div id="toast-container"></div>
 
-  <script src="js/app.js"></script>
+<script src="js/config.js"></script>
+<script src="js/data.js"></script>
+<script src="js/render.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

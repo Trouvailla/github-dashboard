@@ -1,413 +1,273 @@
-/* =====================================================
-   GitHub 数据看板 — 主逻辑 (app.js)
-   ===================================================== */
+/* ===================================================================
+   app.js — 主入口：导航、GitHub API、文件管理
+   =================================================================== */
 
-// ---------- 全局状态 ----------
-const state = {
-  config: loadConfig(),      // { owner, repo, branch, token }
-  files: [],                 // 仓库里的 .xlsx 文件列表
-  currentFile: null,         // 当前选中的文件对象
-  currentData: null,         // 当前解析后的数据（数组 of 对象）
-  currentHeaders: null,      // 表头数组
-  chartInstance: null,       // Chart.js 实例
-};
-
-// ---------- 配置存取 ----------
-function loadConfig() {
-  try { return JSON.parse(localStorage.getItem("gh-dashboard-config")) || null; }
-  catch { return null; }
-}
-function saveConfig(cfg) {
-  localStorage.setItem("gh-dashboard-config", JSON.stringify(cfg));
-  state.config = cfg;
-}
-
-// ---------- Toast 通知 ----------
-function toast(msg, type = "info") {
-  const c = document.getElementById("toast-container");
-  const t = document.createElement("div");
-  t.className = `toast ${type}`;
-  t.textContent = msg;
-  c.appendChild(t);
-  setTimeout(() => { t.style.opacity = "0"; setTimeout(() => t.remove(), 300); }, 2500);
-}
-
-// ---------- GitHub API 封装 ----------
+// ---------- GitHub API ----------
 const GH = {
-  // 通用请求
   async req(path, opts = {}) {
-    const url = `https://api.github.com${path}`;
     const headers = {
-      "Authorization": `token ${state.config.token}`,
-      "Accept": "application/vnd.github.v3+json",
+      'Authorization': `token ${state.config.token}`,
+      'Accept': 'application/vnd.github.v3+json',
       ...(opts.headers || {}),
     };
-    const res = await fetch(url, { ...opts, headers });
+    const res = await fetch(`https://api.github.com${path}`, { ...opts, headers });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.message || `GitHub API ${res.status}`);
     }
+    if (res.status === 204) return {};
     return res.json();
   },
 
-  // 列出 data/ 目录下的文件
   async listFiles() {
     const { owner, repo, branch } = state.config;
-    const path = "data";
-    const data = await this.req(`/repos/${owner}/${repo}/contents/${path}?ref=${branch}`);
-    return data.filter(f => f.name.match(/\.(xlsx|xls)$/i));
+    const data = await this.req(`/repos/${owner}/${repo}/contents/data?ref=${branch}`);
+    return Array.isArray(data) ? data.filter(f => /\.(xlsx|xls)$/i.test(f.name)) : [];
   },
 
-  // 获取文件内容（raw）的 URL
-  rawUrl(file) {
+  rawUrl(fileObj) {
     const { owner, repo, branch } = state.config;
-    return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${file.path}`;
+    return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${fileObj.path}`;
   },
 
-  // 上传 / 更新文件（base64）
-  async uploadFile(path, contentBase64, sha = null) {
+  async uploadFile(path, contentBase64, sha) {
     const { owner, repo, branch } = state.config;
-    const body = {
-      message: `upload: ${path.split("/").pop()}`,
-      content: contentBase64,
-      branch,
-    };
+    const body = { message: `upload: ${path.split('/').pop()}`, content: contentBase64, branch };
     if (sha) body.sha = sha;
     return this.req(`/repos/${owner}/${repo}/contents/${path}`, {
-      method: "PUT",
-      body: JSON.stringify(body),
+      method: 'PUT', body: JSON.stringify(body),
     });
   },
 
-  // 获取文件最新的 commit SHA（用于覆盖上传）
   async getFileSha(path) {
     const { owner, repo, branch } = state.config;
-    const data = await this.req(`/repos/${owner}/${repo}/contents/${path}?ref=${branch}`);
-    return data.sha || null;
+    const d = await this.req(`/repos/${owner}/${repo}/contents/${path}?ref=${branch}`);
+    return d.sha;
   },
 };
 
-// ---------- 解析 Excel ----------
-async function fetchAndParseExcel(file) {
-  const url = GH.rawUrl(file);
-  const workbook = XLSX.read(await (await fetch(url)).arrayBuffer(), { type: "arraybuffer" });
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
-  const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-  const headers = json.length ? Object.keys(json[0]) : [];
-  return { json, headers };
+// ---------- 文件管理 ----------
+let fileList = [];
+
+async function refreshFileList() {
+  if (!state.config) return;
+  try {
+    fileList = await GH.listFiles();
+    renderFileSidebar();
+  } catch (e) {
+    console.error('获取文件列表失败', e);
+  }
 }
 
-// ---------- 渲染文件列表 ----------
-function renderFileList() {
-  const container = document.getElementById("file-list");
-  if (!state.config) {
-    container.innerHTML = `<div class="empty-tip">请先配置仓库信息</div>`;
+function renderFileSidebar() {
+  const c = document.getElementById('file-list');
+  if (!fileList.length) {
+    c.innerHTML = '<div class="empty-tip">暂无文件，请上传 Excel</div>';
     return;
   }
-  if (state.files.length === 0) {
-    container.innerHTML = `<div class="empty-tip">暂无文件，请上传 .xlsx 文件</div>`;
-    return;
-  }
-  container.innerHTML = state.files.map(f => `
-    <div class="file-item ${state.currentFile && state.currentFile.name === f.name ? "active" : ""}" data-name="${f.name}">
-      <span class="file-icon">📊</span>
+  c.innerHTML = fileList.map(f => `
+    <div class="file-item">
+      <span>📄</span>
       <div>
-        <div>${f.name}</div>
-        <div class="file-meta">${formatSize(f.size)}</div>
+        <div class="fn">${f.name}</div>
+        <div class="fs">${fmtSize(f.size)}</div>
+      </div>
+      <div class="file-badges">
+        <select class="file-panel-sel" data-file="${f.name}">
+          <option value="">未关联</option>
+          <option value="panel1">面板1-整商</option>
+          <option value="panel2">面板2-B端KPI</option>
+        </select>
       </div>
     </div>
-  `).join("");
+  `).join('');
 
-  // 绑定点击
-  container.querySelectorAll(".file-item").forEach(el => {
-    el.addEventListener("click", () => {
-      const file = state.files.find(f => f.name === el.dataset.name);
-      if (file) selectFile(file);
-    });
+  // 恢复已关联状态
+  document.querySelectorAll('.file-panel-sel').forEach(sel => {
+    const fname = sel.dataset.file;
+    if (DataEngine._panelFiles.panel1.includes(fname)) sel.value = 'panel1';
+    else if (DataEngine._panelFiles.panel2.includes(fname)) sel.value = 'panel2';
+    sel.onchange = function () {
+      DataEngine._panelFiles.panel1 = DataEngine._panelFiles.panel1.filter(f => f !== fname);
+      DataEngine._panelFiles.panel2 = DataEngine._panelFiles.panel2.filter(f => f !== fname);
+      if (this.value === 'panel1') DataEngine._panelFiles.panel1.push(fname);
+      else if (this.value === 'panel2') DataEngine._panelFiles.panel2.push(fname);
+    };
   });
 }
 
-function formatSize(bytes) {
-  if (bytes < 1024) return bytes + " B";
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-}
-
-// ---------- 选中文件 → 解析 → 渲染 ----------
-async function selectFile(file) {
-  state.currentFile = file;
-  renderFileList();
-  showFileInfo(file);
-  await loadFileData(file);
-}
-
-function showFileInfo(file) {
-  document.getElementById("file-info").classList.remove("hidden");
-  document.getElementById("current-file-name").textContent = "📄 " + file.name;
-  document.getElementById("current-file-time").textContent =
-    "更新于 " + new Date(file.updated_at || Date.now()).toLocaleString("zh-CN");
-}
-
-async function loadFileData(file) {
-  try {
-    toast("正在解析 Excel...", "info");
-    const { json, headers } = await fetchAndParseExcel(file);
-    state.currentData = json;
-    state.currentHeaders = headers;
-
-    renderTable(json, headers);
-    populateChartSelectors(headers);
-    toast(`已加载 ${json.length} 行数据`, "success");
-  } catch (e) {
-    console.error(e);
-    toast("解析失败：" + e.message, "error");
+async function ensureFilesLoaded(panelId) {
+  const files = DataEngine._panelFiles[panelId];
+  let allLoaded = true;
+  for (const f of files) {
+    if (!DataEngine._cache[f]) allLoaded = false;
+  }
+  if (!allLoaded) {
+    toast('正在加载数据...', 'info');
+    for (const f of files) {
+      if (!DataEngine._cache[f]) {
+        const fObj = fileList.find(fl => fl.name === f);
+        if (fObj) await DataEngine.loadFile(fObj);
+      }
+    }
   }
 }
 
-// ---------- 渲染表格 ----------
-function renderTable(json, headers) {
-  const wrap = document.getElementById("table-container");
-  document.getElementById("row-count").textContent = `${json.length} 行`;
+// ---------- 导航 ----------
+const PANEL_NAMES = { panel1: '整商面板', panel2: 'B端KPI面板' };
 
-  if (!json.length) {
-    wrap.innerHTML = `<div class="placeholder">文件为空或无有效数据</div>`;
-    return;
-  }
-
-  // 只显示前 200 行，防止卡顿
-  const show = json.slice(0, 200);
-  let html = `<table><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>`;
-  html += show.map(row => `<tr>${headers.map(h => `<td>${esc(row[h])}</td>`).join("")}</tr>`).join("");
-  html += `</tbody></table>`;
-  if (json.length > 200) {
-    html += `<div class="hint" style="padding:8px 12px;color:var(--text-secondary)">仅展示前 200 行，共 ${json.length} 行</div>`;
-  }
-  wrap.innerHTML = html;
-}
-
-function esc(v) {
-  if (v == null) return "";
-  return String(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-}
-
-// ---------- 图表列选择器 ----------
-function populateChartSelectors(headers) {
-  const xSel = document.getElementById("chart-x-col");
-  const ySel = document.getElementById("chart-y-col");
-  xSel.innerHTML = headers.map(h => `<option value="${esc(h)}">${esc(h)}</option>`).join("");
-  ySel.innerHTML = headers.map(h => `<option value="${esc(h)}">${esc(h)}</option>`).join("");
-}
-
-// ---------- 生成图表 ----------
-function generateChart() {
-  const type = document.getElementById("chart-type").value;
-  const xCol = document.getElementById("chart-x-col").value;
-  const ySelect = document.getElementById("chart-y-col");
-  const yCols = [...ySelect.selectedOptions].map(o => o.value);
-
-  if (!xCol || !yCols.length) {
-    toast("请选择 X 轴和至少一个 Y 轴列", "error");
-    return;
-  }
-
-  // 取前 50 行，防止标签过多
-  const data = state.currentData.slice(0, 50);
-  const labels = data.map(r => r[xCol]);
-
-  // 销毁旧图表
-  if (state.chartInstance) { state.chartInstance.destroy(); state.chartInstance = null; }
-  document.getElementById("chart-placeholder").classList.add("hidden");
-  document.getElementById("chart-canvas").classList.remove("hidden");
-
-  const ctx = document.getElementById("chart-canvas").getContext("2d");
-  const colors = ["#1a73e8","#34a853","#fbbc04","#ea4335","#842de2","#00bcd4","#ff6d00","#607d8b"];
-
-  state.chartInstance = new Chart(ctx, {
-    type,
-    data: {
-      labels,
-      datasets: yCols.map((col, i) => ({
-        label: col,
-        data: data.map(r => Number(r[col]) || 0),
-        backgroundColor: type === "bar" || type === "line" ? colors[i % colors.length] + "88" : colors,
-        borderColor: colors[i % colors.length],
-        borderWidth: 2,
-        fill: type === "line",
-        tension: 0.3,
-      })),
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { position: "top" },
-        title: { display: true, text: `${xCol} vs ${yCols.join(", ")}` },
-      },
-    },
+function switchPanel(panelId) {
+  state.currentPanel = panelId;
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.panel === panelId);
   });
-  toast("图表已生成", "success");
-}
+  document.getElementById('panel-title').textContent = PANEL_NAMES[panelId] || '';
 
-// ---------- 加载文件列表 ----------
-async function refreshFileList() {
-  if (!state.config) { toast("请先配置仓库信息", "error"); showConfigModal(); return; }
-  try {
-    toast("正在获取文件列表...", "info");
-    state.files = await GH.listFiles();
-    renderFileList();
-    toast(`找到 ${state.files.length} 个 Excel 文件`, "success");
-  } catch (e) {
-    console.error(e);
-    toast("获取文件列表失败：" + e.message, "error");
+  if (panelId === 'panel1') {
+    refreshPanel1();
+  } else if (panelId === 'panel2') {
+    ensureFilesLoaded('panel2').then(() => Render.renderPanel2());
   }
 }
 
-// ---------- 弹窗控制 ----------
-function showConfigModal() {
-  document.getElementById("config-overlay").classList.remove("hidden");
-  if (state.config) {
-    document.getElementById("cfg-owner").value  = state.config.owner;
-    document.getElementById("cfg-repo").value    = state.config.repo;
-    document.getElementById("cfg-branch").value  = state.config.branch || "main";
-    document.getElementById("cfg-token").value   = state.config.token;
-  }
-}
-function hideConfigModal() {
-  document.getElementById("config-overlay").classList.add("hidden");
+// ---------- Toast ----------
+function toast(msg, type = 'info') {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 2500);
 }
 
-function showUploadModal() {
-  if (!state.config) { toast("请先配置仓库信息", "error"); showConfigModal(); return; }
-  document.getElementById("upload-overlay").classList.remove("hidden");
-  document.getElementById("upload-progress").classList.add("hidden");
-  document.getElementById("btn-confirm-upload").disabled = true;
-  document.getElementById("progress-fill").style.width = "0%";
-  document.getElementById("progress-text").textContent = "";
-}
-function hideUploadModal() {
-  document.getElementById("upload-overlay").classList.add("hidden");
-  document.getElementById("file-input").value = "";
+function fmtSize(b) {
+  if (!b) return '0 B';
+  if (b < 1024) return b + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  return (b / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-// ---------- 上传逻辑 ----------
+// ---------- 上传 ----------
 let pendingFile = null;
 
-function initUploadArea() {
-  const area  = document.getElementById("upload-area");
-  const input = document.getElementById("file-input");
+function showUploadModal() {
+  if (!state.config) { toast('请先配置仓库信息', 'error'); showConfigModal(); return; }
+  document.getElementById('upload-overlay').classList.remove('hidden');
+  document.getElementById('upload-progress').classList.add('hidden');
+  document.getElementById('btn-confirm-upload').disabled = true;
+  document.getElementById('progress-fill').style.width = '0%';
+  document.getElementById('progress-text').textContent = '';
+  document.querySelector('#upload-area .upload-icon').textContent = '📄';
+  document.querySelector('#upload-area p').textContent = '点击选择或拖拽 .xlsx 文件到此区域';
+}
+function hideUploadModal() {
+  document.getElementById('upload-overlay').classList.add('hidden');
+  document.getElementById('file-input').value = '';
+  pendingFile = null;
+}
 
-  area.addEventListener("click", () => input.click());
-  input.addEventListener("change", () => {
-    if (input.files.length) handleFileSelected(input.files[0]);
-  });
-
-  // 拖拽
-  area.addEventListener("dragover", e => { e.preventDefault(); area.classList.add("drag-over"); });
-  area.addEventListener("dragleave", () => area.classList.remove("drag-over"));
-  area.addEventListener("drop", e => {
-    e.preventDefault(); area.classList.remove("drag-over");
+function initUpload() {
+  const area = document.getElementById('upload-area');
+  const input = document.getElementById('file-input');
+  area.addEventListener('click', () => input.click());
+  input.addEventListener('change', () => { if (input.files.length) handleFileSelected(input.files[0]); });
+  area.addEventListener('dragover', e => { e.preventDefault(); area.classList.add('drag-over'); });
+  area.addEventListener('dragleave', () => area.classList.remove('drag-over'));
+  area.addEventListener('drop', e => {
+    e.preventDefault(); area.classList.remove('drag-over');
     if (e.dataTransfer.files.length) handleFileSelected(e.dataTransfer.files[0]);
   });
 }
 
 function handleFileSelected(file) {
-  if (!file.name.match(/\.(xlsx|xls)$/i)) {
-    toast("只支持 .xlsx / .xls 文件", "error");
-    return;
-  }
+  if (!/\.(xlsx|xls)$/i.test(file.name)) { toast('只支持 .xlsx / .xls', 'error'); return; }
   pendingFile = file;
-  document.querySelector("#upload-area .upload-icon").textContent = "✅";
-  document.querySelector("#upload-area p").textContent = `已选择：${file.name}（${formatSize(file.size)}）`;
-  document.getElementById("btn-confirm-upload").disabled = false;
+  document.querySelector('#upload-area .upload-icon').textContent = '✅';
+  document.querySelector('#upload-area p').textContent = `已选择：${file.name}（${fmtSize(file.size)}）`;
+  document.getElementById('btn-confirm-upload').disabled = false;
 }
 
 async function confirmUpload() {
   if (!pendingFile) return;
   const file = pendingFile;
   const path = `data/${file.name}`;
-
   try {
-    document.getElementById("upload-progress").classList.remove("hidden");
-    setProgress(10, "正在读取文件...");
-
+    setProgress(10, '读取中...');
     const buf = await file.arrayBuffer();
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-    setProgress(40, "正在上传到 GitHub...");
-
-    // 检查是否已存在（获取 SHA 用于覆盖）
-    let sha = null;
-    try { sha = await GH.getFileSha(path); } catch (_) { /* 新文件 */ }
-
-    setProgress(70, "提交中...");
+    let base64 = '';
+    const bytes = new Uint8Array(buf);
+    for (let i = 0; i < bytes.length; i++) base64 += String.fromCharCode(bytes[i]);
+    base64 = btoa(base64);
+    setProgress(40, '上传中...');
+    let sha; try { sha = await GH.getFileSha(path); } catch (_) {}
+    setProgress(70, '提交中...');
     await GH.uploadFile(path, base64, sha);
-    setProgress(100, "上传成功！");
-
-    toast("文件已上传，正在刷新列表...", "success");
+    setProgress(100, '完成！');
+    toast('上传成功', 'success');
     hideUploadModal();
-    pendingFile = null;
-
-    // 重置上传区域
-    document.querySelector("#upload-area .upload-icon").textContent = "📄";
-    document.querySelector("#upload-area p").textContent = "点击选择或拖拽 .xlsx / .xls 文件到此区域";
-
-    // 刷新文件列表，然后自动选中新上传的文件
     await refreshFileList();
-    const newFile = state.files.find(f => f.name === file.name);
-    if (newFile) await selectFile(newFile);
-
   } catch (e) {
-    console.error(e);
-    setProgress(0, "上传失败：" + e.message);
-    toast("上传失败：" + e.message, "error");
+    setProgress(0, '失败: ' + e.message);
+    toast('上传失败: ' + e.message, 'error');
   }
 }
-
-function setProgress(pct, text) {
-  document.getElementById("progress-fill").style.width = pct + "%";
-  document.getElementById("progress-text").textContent = text || "";
+function setProgress(pct, txt) {
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-text').textContent = txt;
 }
+
+// ---------- 配置弹窗 ----------
+function showConfigModal() {
+  document.getElementById('config-overlay').classList.remove('hidden');
+  if (state.config) {
+    document.getElementById('cfg-owner').value = state.config.owner;
+    document.getElementById('cfg-repo').value = state.config.repo;
+    document.getElementById('cfg-branch').value = state.config.branch || 'main';
+    document.getElementById('cfg-token').value = state.config.token;
+  }
+}
+function hideConfigModal() { document.getElementById('config-overlay').classList.add('hidden'); }
 
 // ---------- 初始化 ----------
 function init() {
-  // 配置弹窗
-  document.getElementById("btn-save-config").addEventListener("click", () => {
-    const owner  = document.getElementById("cfg-owner").value.trim();
-    const repo    = document.getElementById("cfg-repo").value.trim();
-    const branch  = document.getElementById("cfg-branch").value.trim() || "main";
-    const token   = document.getElementById("cfg-token").value.trim();
-    if (!owner || !repo || !token) { toast("请填写所有字段", "error"); return; }
-    saveConfig({ owner, repo, branch, token });
+  // 导航
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.addEventListener('click', () => switchPanel(el.dataset.panel));
+  });
+
+  // 配置
+  document.getElementById('btn-save-config').addEventListener('click', () => {
+    const cfg = {
+      owner: document.getElementById('cfg-owner').value.trim(),
+      repo: document.getElementById('cfg-repo').value.trim(),
+      branch: document.getElementById('cfg-branch').value.trim() || 'main',
+      token: document.getElementById('cfg-token').value.trim(),
+    };
+    if (!cfg.owner || !cfg.repo || !cfg.token) { toast('请填写所有字段', 'error'); return; }
+    localStorage.setItem('gh-dashboard-config', JSON.stringify(cfg));
+    state.config = cfg;
     hideConfigModal();
-    toast("配置已保存", "success");
+    toast('配置已保存', 'success');
     refreshFileList();
   });
+  document.getElementById('btn-show-config').addEventListener('click', showConfigModal);
+  document.getElementById('config-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) hideConfigModal(); });
 
-  document.getElementById("btn-show-config").addEventListener("click", showConfigModal);
-  document.getElementById("config-overlay").addEventListener("click", e => {
-    if (e.target === e.currentTarget) hideConfigModal();
-  });
-
-  // 上传弹窗
-  document.getElementById("btn-show-upload").addEventListener("click", showUploadModal);
-  document.getElementById("btn-cancel-upload").addEventListener("click", hideUploadModal);
-  document.getElementById("btn-confirm-upload").addEventListener("click", confirmUpload);
-  document.getElementById("upload-overlay").addEventListener("click", e => {
-    if (e.target === e.currentTarget) hideUploadModal();
-  });
-  initUploadArea();
+  // 上传
+  document.getElementById('btn-show-upload').addEventListener('click', showUploadModal);
+  document.getElementById('btn-cancel-upload').addEventListener('click', hideUploadModal);
+  document.getElementById('btn-confirm-upload').addEventListener('click', confirmUpload);
+  document.getElementById('upload-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) hideUploadModal(); });
+  initUpload();
 
   // 刷新
-  document.getElementById("btn-refresh-files").addEventListener("click", refreshFileList);
-  document.getElementById("btn-refresh-data").addEventListener("click", () => {
-    if (state.currentFile) loadFileData(state.currentFile);
-  });
+  document.getElementById('btn-refresh-files').addEventListener('click', refreshFileList);
 
-  // 生成图表
-  document.getElementById("btn-generate-chart").addEventListener("click", generateChart);
-
-  // 如果已有配置，自动加载
+  // 有配置就自动加载
   if (state.config) refreshFileList();
+
+  // 默认面板
+  switchPanel('panel1');
 }
 
-document.addEventListener("DOMContentLoaded", init);
+document.addEventListener('DOMContentLoaded', init);
