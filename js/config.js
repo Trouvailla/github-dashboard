@@ -37,6 +37,34 @@ const TARGETS = {
     { district: '岑巩', target: 11 },
     { district: '镇远', target: 6 },
   ],
+  // 爆单红包活动报名率6月目标（区县 -> 目标%）
+  boomRate: [
+    { district: '清镇', target: 81.19 },
+    { district: '赤水', target: 86.21 },
+    { district: '思南', target: 80.00 },
+    { district: '黄平', target: 92.00 },
+    { district: '施秉', target: 87.96 },
+    { district: '镇远', target: 91.24 },
+    { district: '岑巩', target: 90.53 },
+    { district: '福泉', target: 83.35 },
+    { district: '罗甸', target: 84.75 },
+    { district: '龙里', target: 81.86 },
+    { district: '黔西', target: 85.87 },
+  ],
+  // 阶梯暴涨活动报名率6月目标（区县 -> 目标%）
+  surgeRate: [
+    { district: '清镇', target: 70.00 },
+    { district: '赤水', target: 65.64 },
+    { district: '思南', target: 70.00 },
+    { district: '黄平', target: 65.00 },
+    { district: '施秉', target: 70.00 },
+    { district: '镇远', target: 70.00 },
+    { district: '岑巩', target: 67.00 },
+    { district: '福泉', target: 71.82 },
+    { district: '罗甸', target: 70.00 },
+    { district: '龙里', target: 73.00 },
+    { district: '黔西', target: 75.00 },
+  ],
 };
 
 // 区县列表（用于区县选择器）
