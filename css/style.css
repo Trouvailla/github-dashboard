@@ -224,6 +224,21 @@ body {
 .upload-icon { font-size: 40px; margin-bottom: 8px; }
 .progress-bar { height: 6px; background: #e8eaed; border-radius: 3px; overflow: hidden; margin: 14px 0; }
 .progress-fill { height: 100%; width: 0; background: var(--primary); border-radius: 3px; transition: width .3s; }
+
+/* ---- 数据加载进度条 ---- */
+.load-progress {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 20px; background: var(--card);
+  border-radius: var(--radius); margin-bottom: 12px;
+  box-shadow: var(--shadow);
+}
+.load-progress .progress-bar {
+  flex: 1; height: 8px; margin: 0;
+}
+.load-progress span {
+  font-size: 13px; color: var(--text-secondary); min-width: 120px;
+}
+.hidden { display: none !important; }
 #progress-text { font-size: 13px; color: var(--text-secondary); }
 
 /* ---- Toast ---- */
