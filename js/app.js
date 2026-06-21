@@ -129,17 +129,60 @@ async function ensureFilesLoaded(panelId) {
 // ---------- 导航 ----------
 const PANEL_NAMES = { panel1: '整商面板', panel2: 'B端KPI面板' };
 
-function switchPanel(panelId) {
+function switchPanel(panelId, kpiType) {
   state.currentPanel = panelId;
+  
+  const parentEl = document.querySelector('.nav-parent[data-panel="panel2"]');
+  const childrenEl = document.querySelector('.nav-children');
+  const arrowEl = document.querySelector('.nav-arrow');
+
+  // 更新简平导航
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.panel === panelId);
   });
+
+  if (panelId === 'panel2') {
+    // 展开级联子项
+    parentEl.classList.add('active');
+    childrenEl.classList.remove('collapsed');
+    arrowEl.classList.add('expanded');
+
+    // 高亮当前 KPI 子项
+    const kpi = kpiType || state.p2.activeKPI || 'new-sign';
+    state.p2.activeKPI = kpi;
+    document.querySelectorAll('.nav-sub-item').forEach(el => {
+      el.classList.toggle('active', el.dataset.kpi === kpi);
+    });
+  } else {
+    // 收起级联
+    parentEl.classList.remove('active');
+    childrenEl.classList.add('collapsed');
+    arrowEl.classList.remove('expanded');
+    document.querySelectorAll('.nav-sub-item').forEach(el => el.classList.remove('active'));
+  }
+
   document.getElementById('panel-title').textContent = PANEL_NAMES[panelId] || '';
 
   if (panelId === 'panel1') {
     refreshPanel1();
   } else if (panelId === 'panel2') {
     ensureFilesLoaded('panel2').then(() => Render.renderPanel2());
+  }
+}
+
+function togglePanel2Cascade() {
+  const childrenEl = document.querySelector('.nav-children');
+  const arrowEl = document.querySelector('.nav-arrow');
+  const parentEl = document.querySelector('.nav-parent[data-panel="panel2"]');
+  const isCollapsed = childrenEl.classList.contains('collapsed');
+
+  if (isCollapsed) {
+    // 展开并切换到 B端KPI 面板
+    switchPanel('panel2');
+  } else {
+    // 收起子项（保持定位在 panel2 内容不动）
+    childrenEl.classList.add('collapsed');
+    arrowEl.classList.remove('expanded');
   }
 }
 
@@ -260,9 +303,20 @@ function hideConfigModal() { document.getElementById('config-overlay').classList
 
 // ---------- 初始化 ----------
 function init() {
-  // 导航
+  // 导航 — 简平项
   document.querySelectorAll('.nav-item').forEach(el => {
     el.addEventListener('click', () => switchPanel(el.dataset.panel));
+  });
+
+  // 导航 — 级联父项
+  document.querySelector('.nav-parent').addEventListener('click', togglePanel2Cascade);
+
+  // 导航 — 级联子项
+  document.querySelectorAll('.nav-sub-item').forEach(el => {
+    el.addEventListener('click', function (e) {
+      e.stopPropagation();
+      switchPanel(this.dataset.panel, this.dataset.kpi);
+    });
   });
 
   // 配置
