@@ -96,6 +96,98 @@ const DataEngine = {
     return Object.values(bdMap).sort((a, b) => (a.bdName || '').localeCompare(b.bdName || ''));
   },
 
+  // ---------- 整商面板：区县级KPI明细 ----------
+  getPanel1DistrictSummary(filter = {}) {
+    const files = this._panelFiles.panel1;
+    let rows = [];
+    files.forEach(f => { rows = rows.concat(this._cache[f] || []); });
+    if (!rows.length) return [];
+
+    const dateKey = filter.date;
+    let filtered = rows.filter(r => formatDateVal(r['日期']) === dateKey);
+
+    const districts = DISTRICTS;
+    return districts.map(d => {
+      const dRows = filtered.filter(r => r['区县名称'] === d);
+      const kpi = {};
+      P1_INDICATORS.forEach(ind => { kpi[ind.id] = ind.compute(dRows); });
+      const biz = computeBizLineBreakdown(dRows);
+      const cat15 = computeCategory15(dRows);
+      const rateIdList = ['p1_reduce_rate','p1_boom_rate','p1_surge_rate','p1_fml_cka_open_rate','p1_super_over100_rate','p1_super_over100_shops'];
+      const total = (dRows.length > 0 || (kpi.p1_total_shops || 0) > 0)
+        ? (kpi.p1_total_shops || 0) : 1;
+      return {
+        district: d,
+        merchants: kpi.p1_total_shops || 0,
+        bdCount: kpi.p1_bd_count || 0,
+        orders: kpi.p1_total_orders || 0,
+        groupOrders: kpi.p1_group_orders || 0,
+        nonGroupOrders: kpi.p1_non_group_orders || 0,
+        superOrders: kpi.p1_super_orders || 0,
+        freeOrders: kpi.p1_free_orders || 0,
+        grossG: kpi.p1_gross_g || 0,
+        netG: kpi.p1_net_g || 0,
+        activeShops: kpi.p1_active_shops || 0,
+        cat15Count: cat15.count || 0,
+        cat15Rate: cat15.rate || 0,
+        reduceRate: kpi.p1_reduce_rate || 0,
+        boomRate: kpi.p1_boom_rate || 0,
+        surgeRate: kpi.p1_surge_rate || 0,
+        fmlCkaOpenRate: kpi.p1_fml_cka_open_rate || 0,
+        over100Shops: kpi.p1_over100_shops || 0,
+        superOver100Shops: kpi.p1_super_over100_shops || 0,
+        superOver100Rate: kpi.p1_super_over100_rate || 0,
+        bizLines: biz.bizLineCounts || {},
+        bizTotal: biz.total || 0,
+        rowCount: dRows.length,
+      };
+    });
+  },
+
+  // ---------- 整商面板：区县下BD级KPI ----------
+  getPanel1BDKpi(filter = {}) {
+    const files = this._panelFiles.panel1;
+    let rows = [];
+    files.forEach(f => { rows = rows.concat(this._cache[f] || []); });
+    const dateKey = filter.date;
+    let filtered = rows.filter(r => formatDateVal(r['日期']) === dateKey && r['区县名称'] === filter.district);
+
+    const bdMap = {};
+    filtered.forEach(r => {
+      const bid = r['bd_id'];
+      if (!bid) return;
+      if (!bdMap[bid]) bdMap[bid] = { bdId: bid, bdName: r['bd名称'] || bid, rows: [] };
+      bdMap[bid].rows.push(r);
+    });
+
+    return Object.values(bdMap).map(bd => {
+      const kpi = {};
+      P1_INDICATORS.forEach(ind => { kpi[ind.id] = ind.compute(bd.rows); });
+      const cat15 = computeCategory15(bd.rows);
+      return {
+        bdId: bd.bdId,
+        bdName: bd.bdName,
+        merchants: kpi.p1_total_shops || 0,
+        orders: kpi.p1_total_orders || 0,
+        groupOrders: kpi.p1_group_orders || 0,
+        nonGroupOrders: kpi.p1_non_group_orders || 0,
+        superOrders: kpi.p1_super_orders || 0,
+        freeOrders: kpi.p1_free_orders || 0,
+        grossG: kpi.p1_gross_g || 0,
+        netG: kpi.p1_net_g || 0,
+        activeShops: kpi.p1_active_shops || 0,
+        cat15Count: cat15.count || 0,
+        reduceRate: kpi.p1_reduce_rate || 0,
+        boomRate: kpi.p1_boom_rate || 0,
+        surgeRate: kpi.p1_surge_rate || 0,
+        fmlCkaOpenRate: kpi.p1_fml_cka_open_rate || 0,
+        over100Shops: kpi.p1_over100_shops || 0,
+        superOver100Shops: kpi.p1_super_over100_shops || 0,
+        rowCount: bd.rows.length,
+      };
+    }).sort((a, b) => (a.bdName || '').localeCompare(b.bdName || ''));
+  },
+
   // ---------- 整商面板：周同比 ----------
   getPanel1WoW(filter = {}) {
     const files = this._panelFiles.panel1;
@@ -180,7 +272,38 @@ const DataEngine = {
       rows: filtered,
       districtDetails,
       districts,
+      bdDetails: filter.district ? this._getNewSignBDData(rows, filter.district) : [],
     };
+  },
+
+  _getNewSignBDData(rows, district) {
+    let dRows = rows.filter(r => r['区县名称'] === district);
+    const bdMap = {};
+    dRows.forEach(r => {
+      const bid = r['bd_id'];
+      if (!bid) return;
+      if (!bdMap[bid]) bdMap[bid] = { bdId: bid, bdName: r['bd'] || r['bd名称'] || bid, rows: [] };
+      bdMap[bid].rows.push(r);
+    });
+    // 区县目标
+    const dTarget = TARGETS.newSign.find(t => t.district === district);
+    const dTargetVal = dTarget ? dTarget.target : 0;
+    return Object.values(bdMap).map(bd => {
+      const bRes = computeNewSign(bd.rows);
+      const bScore = computeNewSignScore(bRes.newSignDone, dTargetVal);
+      return {
+        bdId: bd.bdId,
+        bdName: bd.bdName,
+        newSignDone: bRes.newSignDone,
+        newShops: bRes.newShops,
+        rookRate: bRes.rookRate,
+        trafficRate: bRes.trafficRate,
+        processCoef: bRes.processCoef,
+        progress: bScore.progress,
+        score: bScore.score * bRes.processCoef,
+        rowCount: bd.rows.length,
+      };
+    }).sort((a, b) => (a.bdName || '').localeCompare(b.bdName || ''));
   },
 
   // ---------- B端KPI — 爆单数据 ----------
@@ -233,7 +356,23 @@ const DataEngine = {
       dayRes, monthRes, prevRes,
       districts, districtDayRates,
       rows: filtered,
+      bdRates: filter.district ? this._getBoomBDData(rows, dateKey, filter.district) : [],
     };
+  },
+
+  _getBoomBDData(rows, dateKey, district) {
+    let dRows = rows.filter(r => formatDateVal(r['日期']) === dateKey && r['区县名称'] === district);
+    const bdMap = {};
+    dRows.forEach(r => {
+      const bd = r['BD'];
+      if (!bd) return;
+      if (!bdMap[bd]) bdMap[bd] = { bdName: bd, rows: [] };
+      bdMap[bd].rows.push(r);
+    });
+    return Object.values(bdMap).map(bd => {
+      const res = computeBoomRate(bd.rows, dateKey);
+      return { bdName: bd.bdName, rate: res.rate, numerator: res.numerator, denominator: res.denominator };
+    }).sort((a, b) => b.rate - a.rate);
   },
 
   // ---------- B端KPI — 阶梯暴涨报名率 ----------
@@ -282,7 +421,23 @@ const DataEngine = {
       result, prevResult,
       districts, districtRates,
       rows: filtered,
+      bdRates: filter.district ? this._getSurgeBDData(rows, dateKey, filter.district) : [],
     };
+  },
+
+  _getSurgeBDData(rows, dateKey, district) {
+    let dRows = rows.filter(r => formatDateVal(r['日期']) === dateKey && r['区县名称'] === district);
+    const bdMap = {};
+    dRows.forEach(r => {
+      const bd = r['BD'];
+      if (!bd) return;
+      if (!bdMap[bd]) bdMap[bd] = { bdName: bd, rows: [] };
+      bdMap[bd].rows.push(r);
+    });
+    return Object.values(bdMap).map(bd => {
+      const res = computeSurgeRate(bd.rows);
+      return { bdName: bd.bdName, rate: res.rate, numerator: res.numerator, denominator: res.denominator };
+    }).sort((a, b) => b.rate - a.rate);
   },
 
   // ---------- 超抢手供给上翻 ----------
