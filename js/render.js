@@ -370,6 +370,9 @@ const Render = {
     const dayRatePrev = bd.prevRes.rate;
     const momChange = dayRate - dayRatePrev;
 
+    const boomTarget = bd.boomTarget || 0;
+    const boomAchieve = boomTarget > 0 ? (dayRate * 100 / boomTarget) : 0;
+
     html += `<div class="kpi-cards">
       <div class="kpi-card highlight">
         <div class="kpi-label">日爆单报名率</div>
@@ -378,19 +381,32 @@ const Render = {
         ${dayRatePrev !== undefined ? `<div class="kpi-wow"><span style="color:${momChange>=0?'#34a853':'#ea4335'}">${momChange>=0?'▲':'▼'} ${(momChange*100).toFixed(2)}pp 日环比</span></div>` : ''}
       </div>
       <div class="kpi-card">
+        <div class="kpi-label">6月目标报名率</div>
+        <div class="kpi-value">${boomTarget.toFixed(2)}%</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">目标达成度</div>
+        <div class="kpi-value" style="color:${boomAchieve>=1?'#34a853':boomAchieve>=0.8?'#e37400':'#ea4335'}">${(boomAchieve*100).toFixed(1)}%</div>
+      </div>
+      <div class="kpi-card">
         <div class="kpi-label">月累计爆单报名率</div>
         <div class="kpi-value">${(monthRate*100).toFixed(2)}%</div>
         <div class="kpi-sub">${bd.monthRes.numerator}/${bd.monthRes.denominator}</div>
       </div>
     </div>`;
 
+    // 达成度颜色函数
+    const achieveColor = (v) => v >= 1 ? '#34a853' : v >= 0.8 ? '#e37400' : '#ea4335';
+
     // 区县日报名率表
     if (!state.p2.district) {
       html += `<div class="data-table"><h3>区县明细（${bd.dateKey}）</h3>
-      <table><thead><tr><th>区县</th><th>爆单报名率</th><th>报名商户</th><th>基数</th></tr></thead><tbody>
+      <table><thead><tr><th>区县</th><th>6月目标</th><th>日报名率</th><th>达成</th><th>报名商户</th><th>基数</th></tr></thead><tbody>
       ${bd.districtDayRates.map(d => `<tr class="clickable" data-boom-district="${d.district}">
         <td><b>${d.district}</b></td>
-        <td>${(d.rate*100).toFixed(2)}%</td>
+        <td>${d.target.toFixed(2)}%</td>
+        <td>${d.ratePct.toFixed(2)}%</td>
+        <td style="color:${achieveColor(d.achievement)};font-weight:600">${(d.achievement*100).toFixed(1)}%</td>
         <td>${d.numerator}</td>
         <td>${d.denominator}</td>
       </tr>`).join('')}
@@ -399,10 +415,12 @@ const Render = {
     // 区县选中 → BD明细
     if (state.p2.district && bd.bdRates && bd.bdRates.length) {
       html += `<div class="data-table"><h3>${state.p2.district} — BD明细（${bd.dateKey}）</h3>
-      <table><thead><tr><th>BD</th><th>爆单报名率</th><th>报名商户</th><th>基数</th></tr></thead><tbody>
+      <table><thead><tr><th>BD</th><th>6月目标</th><th>报名率</th><th>达成</th><th>报名商户</th><th>基数</th></tr></thead><tbody>
       ${bd.bdRates.map(b => `<tr>
         <td><b>${b.bdName}</b></td>
-        <td>${(b.rate*100).toFixed(2)}%</td>
+        <td>${b.target.toFixed(2)}%</td>
+        <td>${b.ratePct.toFixed(2)}%</td>
+        <td style="color:${achieveColor(b.achievement)};font-weight:600">${(b.achievement*100).toFixed(1)}%</td>
         <td>${b.numerator}</td>
         <td>${b.denominator}</td>
       </tr>`).join('')}
@@ -429,6 +447,8 @@ const Render = {
     const rate = sg.result.rate;
     const prevRate = sg.prevResult.rate;
     const momChange = rate - prevRate;
+    const surgeTarget = sg.surgeTarget || 0;
+    const surgeAchieve = surgeTarget > 0 ? (rate * 100 / surgeTarget) : 0;
 
     html += `<div class="kpi-cards">
       <div class="kpi-card highlight">
@@ -437,15 +457,27 @@ const Render = {
         <div class="kpi-sub">${sg.result.numerator}/${sg.result.denominator}</div>
         <div class="kpi-wow"><span style="color:${momChange>=0?'#34a853':'#ea4335'}">${momChange>=0?'▲':'▼'} ${(momChange*100).toFixed(2)}pp 日环比</span></div>
       </div>
+      <div class="kpi-card">
+        <div class="kpi-label">6月目标报名率</div>
+        <div class="kpi-value">${surgeTarget.toFixed(2)}%</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">目标达成度</div>
+        <div class="kpi-value" style="color:${surgeAchieve>=1?'#34a853':surgeAchieve>=0.8?'#e37400':'#ea4335'}">${(surgeAchieve*100).toFixed(1)}%</div>
+      </div>
     </div>`;
+
+    const achieveColor = (v) => v >= 1 ? '#34a853' : v >= 0.8 ? '#e37400' : '#ea4335';
 
     // 区县明细
     if (!state.p2.district) {
       html += `<div class="data-table"><h3>区县明细（${sg.dateKey}）</h3>
-      <table><thead><tr><th>区县</th><th>阶梯暴涨报名率</th><th>报名商户</th><th>基数</th></tr></thead><tbody>
+      <table><thead><tr><th>区县</th><th>6月目标</th><th>日报名率</th><th>达成</th><th>报名商户</th><th>基数</th></tr></thead><tbody>
       ${sg.districtRates.map(d => `<tr class="clickable" data-surge-district="${d.district}">
         <td><b>${d.district}</b></td>
-        <td>${(d.rate*100).toFixed(2)}%</td>
+        <td>${d.target.toFixed(2)}%</td>
+        <td>${d.ratePct.toFixed(2)}%</td>
+        <td style="color:${achieveColor(d.achievement)};font-weight:600">${(d.achievement*100).toFixed(1)}%</td>
         <td>${d.numerator}</td>
         <td>${d.denominator}</td>
       </tr>`).join('')}
@@ -454,10 +486,12 @@ const Render = {
     // 区县选中 → BD明细
     if (state.p2.district && sg.bdRates && sg.bdRates.length) {
       html += `<div class="data-table"><h3>${state.p2.district} — BD明细（${sg.dateKey}）</h3>
-      <table><thead><tr><th>BD</th><th>阶梯暴涨报名率</th><th>报名商户</th><th>基数</th></tr></thead><tbody>
+      <table><thead><tr><th>BD</th><th>6月目标</th><th>报名率</th><th>达成</th><th>报名商户</th><th>基数</th></tr></thead><tbody>
       ${sg.bdRates.map(b => `<tr>
         <td><b>${b.bdName}</b></td>
-        <td>${(b.rate*100).toFixed(2)}%</td>
+        <td>${b.target.toFixed(2)}%</td>
+        <td>${b.ratePct.toFixed(2)}%</td>
+        <td style="color:${achieveColor(b.achievement)};font-weight:600">${(b.achievement*100).toFixed(1)}%</td>
         <td>${b.numerator}</td>
         <td>${b.denominator}</td>
       </tr>`).join('')}
