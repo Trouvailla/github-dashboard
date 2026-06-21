@@ -207,15 +207,11 @@ const Render = {
   // ---------- 面板2：B端KPI面板 ----------
   renderPanel2() {
     const p2 = state.p2;
-    let html = `<div class="kpi-tabs">
-      <button class="kpi-tab ${p2.activeKPI === 'new-sign' ? 'active' : ''}" data-kpi="new-sign">📋 新签看板</button>
-      <button class="kpi-tab ${p2.activeKPI === 'boom' ? 'active' : ''}" data-kpi="boom">💥 爆单报名率</button>
-      <button class="kpi-tab ${p2.activeKPI === 'surge' ? 'active' : ''}" data-kpi="surge">📈 阶梯暴涨报名率</button>
-    </div>`;
+    let html = '';
 
-    if (p2.activeKPI === 'new-sign') html += this.renderNewSign();
-    else if (p2.activeKPI === 'boom') html += this.renderBoom();
-    else if (p2.activeKPI === 'surge') html += this.renderSurge();
+    if (p2.activeKPI === 'new-sign') html = this.renderNewSign();
+    else if (p2.activeKPI === 'boom') html = this.renderBoom();
+    else if (p2.activeKPI === 'surge') html = this.renderSurge();
 
     document.getElementById('panel-content').innerHTML = html;
     this.bindPanel2Events();
@@ -415,13 +411,6 @@ const Render = {
   },
 
   bindPanel2Events() {
-    // Tab 切换
-    document.querySelectorAll('.kpi-tab').forEach(tab => {
-      tab.onclick = async function () {
-        state.p2.activeKPI = this.dataset.kpi;
-        Render.renderPanel2();
-      };
-    });
     // 新签区县
     const nsDist = document.getElementById('p2-ns-district');
     if (nsDist) nsDist.onchange = function () { state.p2.district = this.value; Render.renderNewSignWidget(); };
