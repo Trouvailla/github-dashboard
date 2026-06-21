@@ -123,20 +123,39 @@ function renderFileSidebar() {
 }
 
 async function ensureFilesLoaded(panelId) {
-  const files = DataEngine._panelFiles[panelId];
-  let allLoaded = true;
+  const files = DataEngine._panelFiles[panelId] || [];
+  if (!files.length) return;
+  
+  // 检查是否都需要加载
+  let needLoad = [];
   for (const f of files) {
-    if (!DataEngine._cache[f]) allLoaded = false;
+    if (!DataEngine._cache[f]) needLoad.push(f);
   }
-  if (!allLoaded) {
-    toast('正在加载数据...', 'info');
-    for (const f of files) {
-      if (!DataEngine._cache[f]) {
-        const fObj = fileList.find(fl => fl.name === f);
-        if (fObj) await DataEngine.loadFile(fObj);
-      }
+  if (!needLoad.length) return;
+
+  // 显示加载进度
+  const progressEl = document.getElementById('load-progress');
+  const fillEl = document.getElementById('load-progress-fill');
+  const textEl = document.getElementById('load-progress-text');
+  progressEl.classList.remove('hidden');
+  let done = 0;
+
+  function updateLoad(pct, txt) {
+    fillEl.style.width = pct + '%';
+    textEl.textContent = txt;
+  }
+
+  for (const f of needLoad) {
+    const fObj = fileList.find(fl => fl.name === f);
+    if (fObj) {
+      await DataEngine.loadFile(fObj, (pct, txt) => {
+        updateLoad(Math.round((done / needLoad.length) * 100 + pct / needLoad.length), txt);
+      });
     }
+    done++;
   }
+  updateLoad(100, '完成');
+  setTimeout(() => progressEl.classList.add('hidden'), 400);
 }
 
 // ---------- 导航 ----------
@@ -287,10 +306,24 @@ async function confirmUpload() {
     let sha; try { sha = await GH.getFileSha(path); } catch (_) {}
     setProgress(60, '上传中...');
     await GH.uploadFile(path, base64, sha);
-    setProgress(100, '完成！');
-    toast('上传成功', 'success');
+    setProgress(100, '上传完成，解析数据...');
+    toast('上传成功，正在预处理...', 'info');
     hideUploadModal();
     await refreshFileList();
+
+    // 上传后立即解析并保存JSON缓存（后续加载快10倍）
+    try {
+      const fObj = fileList.find(fl => fl.name === file.name);
+      if (fObj) {
+        setProgress(100, '解析并缓存JSON...');
+        await DataEngine.loadFile(fObj, (pct, txt) => {
+          // 静默处理，用户看不到这个进度
+        });
+        toast('数据预处理完成', 'success');
+      }
+    } catch (e) {
+      console.warn('JSON缓存生成失败（不影响使用）:', e.message);
+    }
   } catch (e) {
     setProgress(0, '失败: ' + e.message);
     toast('上传失败: ' + e.message, 'error');
