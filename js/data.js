@@ -285,16 +285,20 @@ const DataEngine = {
       if (!bdMap[bid]) bdMap[bid] = { bdId: bid, bdName: r['bd'] || r['bd名称'] || bid, rows: [] };
       bdMap[bid].rows.push(r);
     });
-    // 区县目标
+    // 区县目标均分到BD，向上取整
     const dTarget = TARGETS.newSign.find(t => t.district === district);
     const dTargetVal = dTarget ? dTarget.target : 0;
+    const bdCount = Object.keys(bdMap).length || 1;
+    const perBDTarget = Math.ceil(dTargetVal / bdCount);
+
     return Object.values(bdMap).map(bd => {
       const bRes = computeNewSign(bd.rows);
-      const bScore = computeNewSignScore(bRes.newSignDone, dTargetVal);
+      const bScore = computeNewSignScore(bRes.newSignDone, perBDTarget);
       return {
         bdId: bd.bdId,
         bdName: bd.bdName,
         newSignDone: bRes.newSignDone,
+        target: perBDTarget,
         newShops: bRes.newShops,
         rookRate: bRes.rookRate,
         trafficRate: bRes.trafficRate,
