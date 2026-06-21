@@ -5,15 +5,28 @@
 // ---------- GitHub API ----------
 const GH = {
   async req(path, opts = {}) {
-    const headers = {
+    const hasBody = !!opts.body;
+    const headers = new Headers({
       'Authorization': `token ${state.config.token}`,
       'Accept': 'application/vnd.github.v3+json',
-      ...(opts.headers || {}),
-    };
-    const res = await fetch(`https://api.github.com${path}`, { ...opts, headers });
+    });
+    if (hasBody) headers.set('Content-Type', 'application/json');
+    // 合并自定义头
+    if (opts.headers) {
+      Object.entries(opts.headers).forEach(([k, v]) => headers.set(k, v));
+    }
+    const fetchOpts = { ...opts, headers };
+    const res = await fetch(`https://api.github.com${path}`, fetchOpts);
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || `GitHub API ${res.status}`);
+      let errMsg = `GitHub API ${res.status}`;
+      try {
+        const err = await res.json();
+        errMsg = err.message || errMsg;
+        if (res.status === 401) errMsg = 'Token 无效或已过期，请重新配置';
+        else if (res.status === 404) errMsg = '仓库或文件不存在，请检查仓库配置';
+        else if (res.status === 422) errMsg = (err.errors && err.errors[0] && err.errors[0].message) || err.message || '请求数据无效';
+      } catch (_) {}
+      throw new Error(errMsg);
     }
     if (res.status === 204) return {};
     return res.json();
