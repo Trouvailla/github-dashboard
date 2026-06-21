@@ -404,18 +404,30 @@ const DataEngine = {
       }
     }
 
+    // 爆单目标（整体）
+    let boomTarget;
+    if (filter.district) {
+      const t = TARGETS.boomRate.find(t => t.district === filter.district);
+      boomTarget = t ? t.target : 0;
+    } else {
+      boomTarget = TARGETS.boomRate.reduce((a, t) => a + t.target, 0) / (TARGETS.boomRate.length || 1);
+    }
+
     // 区县明细
     const districts = [...new Set(rows.map(r => r['区县名称']).filter(Boolean))];
     const districtDayRates = districts.map(d => {
       let dRows = rows.filter(r => formatDateVal(r['日期']) === dateKey && r['区县名称'] === d);
       const dRes = computeBoomRate(dRows, dateKey);
-      return { district: d, rate: dRes.rate, numerator: dRes.numerator, denominator: dRes.denominator };
+      const dTarget = TARGETS.boomRate.find(t => t.district === d);
+      const targetVal = dTarget ? dTarget.target : 0;
+      const ratePct = dRes.rate * 100;
+      return { district: d, rate: dRes.rate, ratePct, target: targetVal, achievement: targetVal > 0 ? ratePct / targetVal : 0, numerator: dRes.numerator, denominator: dRes.denominator };
     });
 
     return {
       allDates, maxDate, dateKey,
       dayRes, monthRes, prevRes,
-      districts, districtDayRates,
+      districts, districtDayRates, boomTarget,
       rows: filtered,
       bdRates: filter.district ? this._getBoomBDData(rows, dateKey, filter.district) : [],
     };
@@ -430,9 +442,13 @@ const DataEngine = {
       if (!bdMap[bd]) bdMap[bd] = { bdName: bd, rows: [] };
       bdMap[bd].rows.push(r);
     });
+    // BD目标 = 区县目标（每个BD统一目标率）
+    const dTarget = TARGETS.boomRate.find(t => t.district === district);
+    const targetVal = dTarget ? dTarget.target : 0;
     return Object.values(bdMap).map(bd => {
       const res = computeBoomRate(bd.rows, dateKey);
-      return { bdName: bd.bdName, rate: res.rate, numerator: res.numerator, denominator: res.denominator };
+      const ratePct = res.rate * 100;
+      return { bdName: bd.bdName, rate: res.rate, ratePct, target: targetVal, achievement: targetVal > 0 ? ratePct / targetVal : 0, numerator: res.numerator, denominator: res.denominator };
     }).sort((a, b) => b.rate - a.rate);
   },
 
@@ -465,17 +481,29 @@ const DataEngine = {
       }
     }
 
+    // 阶梯暴涨目标（整体）
+    let surgeTarget;
+    if (filter.district) {
+      const t = TARGETS.surgeRate.find(t => t.district === filter.district);
+      surgeTarget = t ? t.target : 0;
+    } else {
+      surgeTarget = TARGETS.surgeRate.reduce((a, t) => a + t.target, 0) / (TARGETS.surgeRate.length || 1);
+    }
+
     // 区县明细
     const districts = [...new Set(rows.map(r => r['区县名称']).filter(Boolean))];
     const districtRates = districts.map(d => {
       let dRows = rows.filter(r => formatDateVal(r['日期']) === dateKey && r['区县名称'] === d);
       const dRes = computeSurgeRate(dRows);
-      return { district: d, rate: dRes.rate, numerator: dRes.numerator, denominator: dRes.denominator };
+      const dTarget = TARGETS.surgeRate.find(t => t.district === d);
+      const targetVal = dTarget ? dTarget.target : 0;
+      const ratePct = dRes.rate * 100;
+      return { district: d, rate: dRes.rate, ratePct, target: targetVal, achievement: targetVal > 0 ? ratePct / targetVal : 0, numerator: dRes.numerator, denominator: dRes.denominator };
     });
 
     return {
       allDates, maxDate, dateKey,
-      result, prevResult,
+      result, prevResult, surgeTarget,
       districts, districtRates,
       rows: filtered,
       bdRates: filter.district ? this._getSurgeBDData(rows, dateKey, filter.district) : [],
@@ -491,9 +519,13 @@ const DataEngine = {
       if (!bdMap[bd]) bdMap[bd] = { bdName: bd, rows: [] };
       bdMap[bd].rows.push(r);
     });
+    // BD目标 = 区县目标（每个BD统一目标率）
+    const dTarget = TARGETS.surgeRate.find(t => t.district === district);
+    const targetVal = dTarget ? dTarget.target : 0;
     return Object.values(bdMap).map(bd => {
       const res = computeSurgeRate(bd.rows);
-      return { bdName: bd.bdName, rate: res.rate, numerator: res.numerator, denominator: res.denominator };
+      const ratePct = res.rate * 100;
+      return { bdName: bd.bdName, rate: res.rate, ratePct, target: targetVal, achievement: targetVal > 0 ? ratePct / targetVal : 0, numerator: res.numerator, denominator: res.denominator };
     }).sort((a, b) => b.rate - a.rate);
   },
 
