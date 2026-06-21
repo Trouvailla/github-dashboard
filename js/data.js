@@ -10,15 +10,81 @@ const DataEngine = {
   _panelFiles: { panel1: [], 'panel2-new-sign': [], 'panel2-boom': [], 'panel2-surge': [] },
 
   // ---------- 加载 + 解析 ----------
-  async loadFile(fileObj) {
-    const url = `https://raw.githubusercontent.com/${state.config.owner}/${state.config.repo}/${state.config.branch}/${fileObj.path}`;
-    const resp = await fetch(url + '?t=' + Date.now());
+  async loadFile(fileObj, onProgress) {
+    const name = fileObj.name;
+    const base = `https://raw.githubusercontent.com/${state.config.owner}/${state.config.repo}/${state.config.branch}`;
+
+    // 1. 优先加载 JSON 缓存（快10倍+）
+    const jsonPath = `data/${name}.json`;
+    try {
+      const jsonResp = await fetch(`${base}/${jsonPath}?t=${Date.now()}`);
+      if (jsonResp.ok) {
+        if (onProgress) onProgress(80, '加载JSON缓存...');
+        const rows = await jsonResp.json();
+        this._cache[name] = rows;
+        if (onProgress) onProgress(100, '完成');
+        return rows;
+      }
+    } catch (_) { /* 没有JSON缓存，回退到XLSX */ }
+
+    // 2. 回退：加载完整 XLSX
+    if (onProgress) onProgress(10, '下载Excel...');
+    const url = `${base}/${fileObj.path}?t=${Date.now()}`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`下载失败: ${resp.status}`);
     const buf = await resp.arrayBuffer();
+    if (onProgress) onProgress(30, '解析Excel...');
     const wb = XLSX.read(buf, { type: 'arraybuffer' });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-    this._cache[fileObj.name] = rows;
+    this._cache[name] = rows;
+
+    // 3. 异步保存JSON缓存（不阻塞当前操作）
+    if (onProgress) onProgress(90, '缓存JSON...');
+    this._saveJsonToGitHub(name, rows).catch(() => {});
+    
+    if (onProgress) onProgress(100, '完成');
     return rows;
+  },
+
+  // 将解析后的数据保存为 JSON 到 GitHub（后台执行）
+  async _saveJsonToGitHub(xlsxName, rows) {
+    try {
+      const cfg = state.config;
+      if (!cfg || !cfg.token) return;
+      const jsonPath = `data/${xlsxName}.json`;
+      const content = JSON.stringify(rows);
+      const contentB64 = btoa(unescape(encodeURIComponent(content)));
+      
+      // 检查是否已有 JSON
+      let sha = '';
+      try {
+        const resp = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${jsonPath}?ref=${cfg.branch}`, {
+          headers: { 'Authorization': `token ${cfg.token}`, 'Accept': 'application/vnd.github.v3+json' }
+        });
+        if (resp.ok) {
+          const d = await resp.json();
+          sha = d.sha;
+        }
+      } catch (_) {}
+
+      const body = {
+        message: `cache: JSON snapshot for ${xlsxName}`,
+        content: contentB64,
+        branch: cfg.branch,
+      };
+      if (sha) body.sha = sha;
+
+      await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${jsonPath}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `token ${cfg.token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (_) { /* 后台保存失败不影响主流程 */ }
   },
 
   getCached(name) { return this._cache[name] || []; },
