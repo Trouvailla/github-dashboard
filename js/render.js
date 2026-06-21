@@ -329,12 +329,13 @@ const Render = {
     if (state.p2.district && nsData.bdDetails && nsData.bdDetails.length) {
       html += `<div class="data-table"><h3>${state.p2.district} — BD明细</h3>
       <table><thead><tr>
-        <th>BD</th><th>新签达成</th><th>进度</th><th>新签得分</th><th>新签店铺数</th><th>初出茅庐率</th><th>流量卡率</th><th>过程项系数</th>
+        <th>BD</th><th>新签达成</th><th>目标</th><th>进度</th><th>新签得分</th><th>新签店铺数</th><th>初出茅庐率</th><th>流量卡率</th><th>过程项系数</th>
       </tr></thead><tbody>
       ${nsData.bdDetails.map(b => `
         <tr>
           <td><b>${b.bdName}</b></td>
           <td>${b.newSignDone}</td>
+          <td>${b.target}</td>
           <td>${(b.progress*100).toFixed(1)}%</td>
           <td>${b.score.toFixed(4)}</td>
           <td>${b.newShops}</td>
