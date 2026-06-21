@@ -7,7 +7,7 @@ const DataEngine = {
   _cache: {},
 
   // 按面板绑定文件
-  _panelFiles: { panel1: [], panel2: [] },
+  _panelFiles: { panel1: [], 'panel2-new-sign': [], 'panel2-boom': [], 'panel2-surge': [] },
 
   // ---------- 加载 + 解析 ----------
   async loadFile(fileObj) {
@@ -210,14 +210,9 @@ const DataEngine = {
 
   // ---------- B端KPI — 新签数据 ----------
   getNewSignData(filter = {}) {
-    const files = this._panelFiles.panel2;
+    const files = this._panelFiles['panel2-new-sign'];
     let rows = [];
-    // 找文件名包含"新签商户考核"的文件
-    files.forEach(f => {
-      if (f.includes('新签商户考核')) {
-        rows = rows.concat(this._cache[f] || []);
-      }
-    });
+    files.forEach(f => { rows = rows.concat(this._cache[f] || []); });
     if (!rows.length) return null;
 
     let filtered = [...rows];
@@ -312,13 +307,9 @@ const DataEngine = {
 
   // ---------- B端KPI — 爆单数据 ----------
   getBoomData(filter = {}) {
-    const files = this._panelFiles.panel2;
+    const files = this._panelFiles['panel2-boom'];
     let rows = [];
-    files.forEach(f => {
-      if (f.includes('爆单综合看板')) {
-        rows = rows.concat(this._cache[f] || []);
-      }
-    });
+    files.forEach(f => { rows = rows.concat(this._cache[f] || []); });
     if (!rows.length) return null;
 
     const allDates = [...new Set(rows.map(r => formatDateVal(r['日期'])).filter(Boolean))].sort();
@@ -381,13 +372,9 @@ const DataEngine = {
 
   // ---------- B端KPI — 阶梯暴涨报名率 ----------
   getSurgeData(filter = {}) {
-    const files = this._panelFiles.panel2;
+    const files = this._panelFiles['panel2-boom']; // 爆单文件同时用于阶梯暴涨
     let rows = [];
-    files.forEach(f => {
-      if (f.includes('爆单综合看板')) {
-        rows = rows.concat(this._cache[f] || []);
-      }
-    });
+    files.forEach(f => { rows = rows.concat(this._cache[f] || []); });
     if (!rows.length) return null;
 
     const allDates = [...new Set(rows.map(r => formatDateVal(r['日期'])).filter(Boolean))].sort();
