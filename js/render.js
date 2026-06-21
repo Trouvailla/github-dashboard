@@ -68,12 +68,17 @@ const Render = {
         </div>
       </div>`;
 
-    // 如果是BD粒度，展示BD数据表
+    // 整商层面：展示区县明细表
+    if (!state.p1.district && !p1.bdId) {
+      filterBar += this.renderDistrictKPITable(p1);
+    }
+    // 区县层面：展示BD级KPI
+    if (state.p1.district && !p1.bdId) {
+      filterBar += this.renderBDKPITable(p1);
+    }
+    // BD粒度：展示商户明细
     if (p1.bdId) {
-      filterBar += this.renderBDTable(d.rawRows);
-    } else if (state.p1.district) {
-      // 区县级：展示该区县下各BD汇总
-      filterBar += this.renderDistrictBDSummary(p1.bds, d.rawRows);
+      filterBar += this.renderBDDetailTable(d.rawRows, state.p1.district);
     }
 
     // 指标卡片
@@ -168,40 +173,75 @@ const Render = {
     this.bindPanel1Events();
   },
 
-  // BD详情表
-  renderBDTable(rows) {
-    if (!rows || !rows.length) return '<div class="notice">无BD粒度数据</div>';
-    const bdMap = {};
-    rows.forEach(r => {
-      const bd = r['bd_id'];
-      if (!bd) return;
-      if (!bdMap[bd]) bdMap[bd] = { bdId: bd, bdName: r['bd名称'] || bd, shops: new Set(), orders: 0, grossG: 0, netG: 0 };
-      bdMap[bd].shops.add(r['商户id']);
-      bdMap[bd].orders += Number(r['总订单']) || 0;
-      bdMap[bd].grossG += Number(r['毛g']) || 0;
-      bdMap[bd].netG += Number(r['净g']) || 0;
-    });
-    const bds = Object.values(bdMap);
-
-    return `<div class="data-table" style="margin-top:12px">
-      <table><thead><tr><th>BD</th><th>商户数</th><th>订单数</th><th>毛G(万)</th><th>净G(万)</th></tr></thead><tbody>
-      ${bds.map(b => `<tr><td>${b.bdName}</td><td>${b.shops.size}</td><td>${b.orders.toLocaleString()}</td><td>${(b.grossG/10000).toFixed(2)}</td><td>${(b.netG/10000).toFixed(2)}</td></tr>`).join('')}
-      </tbody></table></div>`;
+  // 整商 → 区县KPI明细表
+  renderDistrictKPITable(p1) {
+    if (!p1.districtSummary || !p1.districtSummary.length) return '';
+    const ds = p1.districtSummary;
+    const cols = [
+      { key: 'district', label: '区县', fmt: (v) => `<b>${v}</b>` },
+      { key: 'merchants', label: '商户数', fmt: (v) => v.toLocaleString() },
+      { key: 'bdCount', label: 'BD数', fmt: (v) => v.toLocaleString() },
+      { key: 'orders', label: '订单数', fmt: (v) => v.toLocaleString() },
+      { key: 'groupOrders', label: '拼团订单', fmt: (v) => v.toLocaleString() },
+      { key: 'superOrders', label: '超抢手订单', fmt: (v) => v.toLocaleString() },
+      { key: 'grossG', label: '毛G(万)', fmt: (v) => (v / 10000).toFixed(2) },
+      { key: 'netG', label: '净G(万)', fmt: (v) => (v / 10000).toFixed(2) },
+      { key: 'activeShops', label: '动销商户', fmt: (v) => v.toLocaleString() },
+      { key: 'cat15Count', label: '1.5级品类', fmt: (v) => v.toLocaleString() },
+      { key: 'reduceRate', label: '减配覆盖率', fmt: (v) => (v * 100).toFixed(1) + '%' },
+      { key: 'boomRate', label: '爆单覆盖率', fmt: (v) => (v * 100).toFixed(1) + '%' },
+      { key: 'surgeRate', label: '暴涨覆盖率', fmt: (v) => (v * 100).toFixed(1) + '%' },
+      { key: 'over100Shops', label: '百单商户', fmt: (v) => v.toLocaleString() },
+    ];
+    return `<div class="data-table"><h3>区县明细</h3>
+    <table><thead><tr>${cols.map(c => `<th>${c.label}</th>`).join('')}</tr></thead><tbody>
+    ${ds.map(d => `<tr class="clickable" data-district="${d.district}">${cols.map(c => `<td>${c.fmt(d[c.key])}</td>`).join('')}</tr>`).join('')}
+    </tbody></table></div>`;
   },
 
-  // 区县BD汇总表
-  renderDistrictBDSummary(bds, rows) {
-    return `<div class="data-table" style="margin-top:12px">
-      <table><thead><tr><th>BD</th><th>商户数</th><th>订单数</th><th>毛G(万)</th><th>净G(万)</th></tr></thead><tbody>
-      ${bds.map(bd => {
-        const bdRows = rows.filter(r => String(r['bd_id']) === String(bd.bdId));
-        const shops = uniq(bdRows, '商户id').length;
-        const orders = sum(bdRows, '总订单');
-        const grossG = sum(bdRows, '毛g');
-        const netG = sum(bdRows, '净g');
-        return `<tr class="clickable" data-bd-id="${bd.bdId}"><td>${bd.bdName}</td><td>${shops}</td><td>${orders.toLocaleString()}</td><td>${(grossG/10000).toFixed(2)}</td><td>${(netG/10000).toFixed(2)}</td></tr>`;
-      }).join('')}
-      </tbody></table></div>`;
+  // 区县 → BD级KPI表
+  renderBDKPITable(p1) {
+    if (!p1.bdKpis || !p1.bdKpis.length) return '<div class="notice">该区县暂无BD数据</div>';
+    const bds = p1.bdKpis;
+    const cols = [
+      { key: 'bdName', label: 'BD', fmt: (v) => `<b>${v}</b>` },
+      { key: 'merchants', label: '商户数', fmt: (v) => v.toLocaleString() },
+      { key: 'orders', label: '订单数', fmt: (v) => v.toLocaleString() },
+      { key: 'groupOrders', label: '拼团订单', fmt: (v) => v.toLocaleString() },
+      { key: 'superOrders', label: '超抢手订单', fmt: (v) => v.toLocaleString() },
+      { key: 'grossG', label: '毛G(万)', fmt: (v) => (v / 10000).toFixed(2) },
+      { key: 'netG', label: '净G(万)', fmt: (v) => (v / 10000).toFixed(2) },
+      { key: 'activeShops', label: '动销商户', fmt: (v) => v.toLocaleString() },
+      { key: 'cat15Count', label: '1.5级品类', fmt: (v) => v.toLocaleString() },
+      { key: 'reduceRate', label: '减配覆盖率', fmt: (v) => (v * 100).toFixed(1) + '%' },
+      { key: 'over100Shops', label: '百单商户', fmt: (v) => v.toLocaleString() },
+      { key: 'superOver100Shops', label: '超抢手百单', fmt: (v) => v.toLocaleString() },
+    ];
+    return `<div class="data-table"><h3>${state.p1.district} — BD明细</h3>
+    <table><thead><tr>${cols.map(c => `<th>${c.label}</th>`).join('')}</tr></thead><tbody>
+    ${bds.map(b => `<tr class="clickable" data-bd-id="${b.bdId}">${cols.map(c => `<td>${c.fmt(b[c.key])}</td>`).join('')}</tr>`).join('')}
+    </tbody></table></div>`;
+  },
+
+  // BD粒度 → 商户明细表
+  renderBDDetailTable(rows, district) {
+    if (!rows || !rows.length) return '<div class="notice">无商户数据</div>';
+    const cols = [
+      { key: '商户名称', label: '商户名称' },
+      { key: '业务线含tn', label: '业务线' },
+      { key: '当日是否营业', label: '营业' },
+      { key: '总订单', label: '订单数' },
+      { key: '毛g', label: '毛G' },
+      { key: '净g', label: '净G' },
+      { key: '当日是否动销', label: '动销' },
+      { key: '餐饮一点五级类目', label: '1.5级品类' },
+      { key: '超抢手订单数', label: '超抢手订单' },
+    ];
+    const title = district ? `${district} — BD商户明细` : 'BD商户明细';
+    return `<div class="data-table"><h3>${title}（共${rows.length}条）</h3>
+    <table><thead><tr>${cols.map(c => `<th>${c.label}</th>`).join('')}</tr></thead><tbody>
+    ${rows.map(r => `<tr>${cols.map(c => `<td>${r[c.key] || ''}</td>`).join('')}</tr>`).join('')}
+    </tbody></table></div>`;
   },
 
   // ---------- 面板2：B端KPI面板 ----------
@@ -265,25 +305,46 @@ const Render = {
     </div>`;
 
     // 区县明细表
-    html += `<div class="data-table"><h3>区县明细</h3>
-    <table><thead><tr>
-      <th>区县</th><th>新签达成</th><th>目标</th><th>进度</th><th>新签得分</th><th>新签店铺数</th><th>初出茅庐率</th><th>流量卡率</th><th>过程项系数</th>
-    </tr></thead><tbody>
-    ${nsData.districtDetails.map(d => `
-      <tr>
-        <td><b>${d.district}</b></td>
-        <td>${d.newSignDone}</td>
-        <td>${d.target}</td>
-        <td>${(d.progress*100).toFixed(1)}%</td>
-        <td>${d.score.toFixed(4)}</td>
-        <td>${d.newShops}</td>
-        <td>${(d.rookRate*100).toFixed(1)}%</td>
-        <td>${(d.trafficRate*100).toFixed(1)}%</td>
-        <td>${d.processCoef.toFixed(2)}</td>
-      </tr>
-    `).join('')}
-    </tbody></table></div>`;
-
+    if (!state.p2.district) {
+      html += `<div class="data-table"><h3>区县明细</h3>
+      <table><thead><tr>
+        <th>区县</th><th>新签达成</th><th>目标</th><th>进度</th><th>新签得分</th><th>新签店铺数</th><th>初出茅庐率</th><th>流量卡率</th><th>过程项系数</th>
+      </tr></thead><tbody>
+      ${nsData.districtDetails.map(d => `
+        <tr class="clickable" data-ns-district="${d.district}">
+          <td><b>${d.district}</b></td>
+          <td>${d.newSignDone}</td>
+          <td>${d.target}</td>
+          <td>${(d.progress*100).toFixed(1)}%</td>
+          <td>${d.score.toFixed(4)}</td>
+          <td>${d.newShops}</td>
+          <td>${(d.rookRate*100).toFixed(1)}%</td>
+          <td>${(d.trafficRate*100).toFixed(1)}%</td>
+          <td>${d.processCoef.toFixed(2)}</td>
+        </tr>
+      `).join('')}
+      </tbody></table></div>`;
+    }
+    // 区县选中后 → BD明细
+    if (state.p2.district && nsData.bdDetails && nsData.bdDetails.length) {
+      html += `<div class="data-table"><h3>${state.p2.district} — BD明细</h3>
+      <table><thead><tr>
+        <th>BD</th><th>新签达成</th><th>进度</th><th>新签得分</th><th>新签店铺数</th><th>初出茅庐率</th><th>流量卡率</th><th>过程项系数</th>
+      </tr></thead><tbody>
+      ${nsData.bdDetails.map(b => `
+        <tr>
+          <td><b>${b.bdName}</b></td>
+          <td>${b.newSignDone}</td>
+          <td>${(b.progress*100).toFixed(1)}%</td>
+          <td>${b.score.toFixed(4)}</td>
+          <td>${b.newShops}</td>
+          <td>${(b.rookRate*100).toFixed(1)}%</td>
+          <td>${(b.trafficRate*100).toFixed(1)}%</td>
+          <td>${b.processCoef.toFixed(2)}</td>
+        </tr>
+      `).join('')}
+      </tbody></table></div>`;
+    }
     return html;
   },
 
@@ -323,16 +384,29 @@ const Render = {
     </div>`;
 
     // 区县日报名率表
-    html += `<div class="data-table"><h3>区县明细（${bd.dateKey}）</h3>
-    <table><thead><tr><th>区县</th><th>爆单报名率</th><th>报名商户</th><th>基数</th></tr></thead><tbody>
-    ${bd.districtDayRates.map(d => `<tr>
-      <td><b>${d.district}</b></td>
-      <td>${(d.rate*100).toFixed(2)}%</td>
-      <td>${d.numerator}</td>
-      <td>${d.denominator}</td>
-    </tr>`).join('')}
-    </tbody></table></div>`;
-
+    if (!state.p2.district) {
+      html += `<div class="data-table"><h3>区县明细（${bd.dateKey}）</h3>
+      <table><thead><tr><th>区县</th><th>爆单报名率</th><th>报名商户</th><th>基数</th></tr></thead><tbody>
+      ${bd.districtDayRates.map(d => `<tr class="clickable" data-boom-district="${d.district}">
+        <td><b>${d.district}</b></td>
+        <td>${(d.rate*100).toFixed(2)}%</td>
+        <td>${d.numerator}</td>
+        <td>${d.denominator}</td>
+      </tr>`).join('')}
+      </tbody></table></div>`;
+    }
+    // 区县选中 → BD明细
+    if (state.p2.district && bd.bdRates && bd.bdRates.length) {
+      html += `<div class="data-table"><h3>${state.p2.district} — BD明细（${bd.dateKey}）</h3>
+      <table><thead><tr><th>BD</th><th>爆单报名率</th><th>报名商户</th><th>基数</th></tr></thead><tbody>
+      ${bd.bdRates.map(b => `<tr>
+        <td><b>${b.bdName}</b></td>
+        <td>${(b.rate*100).toFixed(2)}%</td>
+        <td>${b.numerator}</td>
+        <td>${b.denominator}</td>
+      </tr>`).join('')}
+      </tbody></table></div>`;
+    }
     return html;
   },
 
@@ -365,16 +439,29 @@ const Render = {
     </div>`;
 
     // 区县明细
-    html += `<div class="data-table"><h3>区县明细（${sg.dateKey}）</h3>
-    <table><thead><tr><th>区县</th><th>阶梯暴涨报名率</th><th>报名商户</th><th>基数</th></tr></thead><tbody>
-    ${sg.districtRates.map(d => `<tr>
-      <td><b>${d.district}</b></td>
-      <td>${(d.rate*100).toFixed(2)}%</td>
-      <td>${d.numerator}</td>
-      <td>${d.denominator}</td>
-    </tr>`).join('')}
-    </tbody></table></div>`;
-
+    if (!state.p2.district) {
+      html += `<div class="data-table"><h3>区县明细（${sg.dateKey}）</h3>
+      <table><thead><tr><th>区县</th><th>阶梯暴涨报名率</th><th>报名商户</th><th>基数</th></tr></thead><tbody>
+      ${sg.districtRates.map(d => `<tr class="clickable" data-surge-district="${d.district}">
+        <td><b>${d.district}</b></td>
+        <td>${(d.rate*100).toFixed(2)}%</td>
+        <td>${d.numerator}</td>
+        <td>${d.denominator}</td>
+      </tr>`).join('')}
+      </tbody></table></div>`;
+    }
+    // 区县选中 → BD明细
+    if (state.p2.district && sg.bdRates && sg.bdRates.length) {
+      html += `<div class="data-table"><h3>${state.p2.district} — BD明细（${sg.dateKey}）</h3>
+      <table><thead><tr><th>BD</th><th>阶梯暴涨报名率</th><th>报名商户</th><th>基数</th></tr></thead><tbody>
+      ${sg.bdRates.map(b => `<tr>
+        <td><b>${b.bdName}</b></td>
+        <td>${(b.rate*100).toFixed(2)}%</td>
+        <td>${b.numerator}</td>
+        <td>${b.denominator}</td>
+      </tr>`).join('')}
+      </tbody></table></div>`;
+    }
     return html;
   },
 
@@ -401,29 +488,49 @@ const Render = {
     }
     if (sel('btn-p1-refresh')) sel('btn-p1-refresh').onclick = refreshPanel1;
 
-    // BD表格行点击
+    // BD表格行点击 → 下沉到BD
     document.querySelectorAll('.clickable[data-bd-id]').forEach(el => {
       el.onclick = async function () {
         state.p1.bdId = this.dataset.bdId;
         await refreshPanel1();
       };
     });
+    // 区县表格行点击 → 选中对应区县
+    document.querySelectorAll('.clickable[data-district]').forEach(el => {
+      el.onclick = async function () {
+        state.p1.district = this.dataset.district;
+        state.p1.bdId = '';
+        await refreshPanel1();
+      };
+    });
   },
 
   bindPanel2Events() {
-    // 新签区县
+    // 新签区县下拉
     const nsDist = document.getElementById('p2-ns-district');
     if (nsDist) nsDist.onchange = function () { state.p2.district = this.value; Render.renderNewSignWidget(); };
+    // 新签区县表行点击 → 下沉
+    document.querySelectorAll('.clickable[data-ns-district]').forEach(el => {
+      el.onclick = function () { state.p2.district = this.dataset.nsDistrict; Render.renderNewSignWidget(); };
+    });
     // 爆单日期/区县
     const bdDate = document.getElementById('p2-boom-date');
     const bdDist = document.getElementById('p2-boom-district');
     if (bdDate) bdDate.onchange = function () { state.p2.date = this.value; Render.renderBoomWidget(); };
     if (bdDist) bdDist.onchange = function () { state.p2.district = this.value; Render.renderBoomWidget(); };
+    // 爆单区县行点击
+    document.querySelectorAll('.clickable[data-boom-district]').forEach(el => {
+      el.onclick = function () { state.p2.district = this.dataset.boomDistrict; Render.renderBoomWidget(); };
+    });
     // 阶梯暴涨日期/区县
     const sgDate = document.getElementById('p2-surge-date');
     const sgDist = document.getElementById('p2-surge-district');
     if (sgDate) sgDate.onchange = function () { state.p2.date = this.value; Render.renderSurgeWidget(); };
     if (sgDist) sgDist.onchange = function () { state.p2.district = this.value; Render.renderSurgeWidget(); };
+    // 阶梯暴涨区县行点击
+    document.querySelectorAll('.clickable[data-surge-district]').forEach(el => {
+      el.onclick = function () { state.p2.district = this.dataset.surgeDistrict; Render.renderSurgeWidget(); };
+    });
   },
 
   renderNewSignWidget() { document.getElementById('panel-content').innerHTML = this.renderNewSign(); this.bindPanel2Events(); },
@@ -434,10 +541,22 @@ const Render = {
 // ---------- 刷新面板1 ----------
 async function refreshPanel1() {
   await ensureFilesLoaded('panel1');
-  state.p1.data = DataEngine.getPanel1Data({ date: state.p1.date, district: state.p1.district, bdId: state.p1.bdId });
-  state.p1.wow = DataEngine.getPanel1WoW({ date: state.p1.date || state.p1.data?.dateKey, district: state.p1.district, bdId: state.p1.bdId });
+  const dateKey = state.p1.date;
+  state.p1.data = DataEngine.getPanel1Data({ date: dateKey, district: state.p1.district, bdId: state.p1.bdId });
+  state.p1.wow = DataEngine.getPanel1WoW({ date: dateKey || state.p1.data?.dateKey, district: state.p1.district, bdId: state.p1.bdId });
+  if (!state.p1.date) state.p1.date = state.p1.data?.dateKey || '';
+  // 整商层面加载区县KPI明细
+  if (!state.p1.district && !state.p1.bdId) {
+    state.p1.districtSummary = DataEngine.getPanel1DistrictSummary({ date: state.p1.date || state.p1.data?.dateKey });
+  } else {
+    state.p1.districtSummary = null;
+  }
+  // 区县层面加载BD级KPI
   if (state.p1.district && !state.p1.bdId) {
+    state.p1.bdKpis = DataEngine.getPanel1BDKpi({ date: state.p1.date || state.p1.data?.dateKey, district: state.p1.district });
     state.p1.bds = DataEngine.getPanel1BDs({ date: state.p1.date || state.p1.data?.dateKey, district: state.p1.district });
+  } else {
+    state.p1.bdKpis = null;
   }
   Render.renderPanel1();
 }
