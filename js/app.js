@@ -204,16 +204,30 @@ async function confirmUpload() {
   if (!pendingFile) return;
   const file = pendingFile;
   const path = `data/${file.name}`;
+  // 立即切到进度条视图
+  document.getElementById('upload-area').classList.add('hidden');
+  document.getElementById('upload-progress').classList.remove('hidden');
+  document.getElementById('btn-confirm-upload').disabled = true;
+  document.getElementById('btn-cancel-upload').disabled = true;
   try {
-    setProgress(10, '读取中...');
-    const buf = await file.arrayBuffer();
-    let base64 = '';
-    const bytes = new Uint8Array(buf);
-    for (let i = 0; i < bytes.length; i++) base64 += String.fromCharCode(bytes[i]);
-    base64 = btoa(base64);
-    setProgress(40, '上传中...');
+    setProgress(5, '读取文件...');
+    // 用 FileReader 异步编码（不阻塞 UI）
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onprogress = (e) => {
+        if (e.lengthComputable) setProgress(5 + Math.round(e.loaded / e.total * 30), '编码中...');
+      };
+      reader.onload = () => {
+        const result = reader.result;
+        const comma = result.indexOf(',');
+        resolve(result.substring(comma + 1));
+      };
+      reader.onerror = () => reject(new Error('文件读取失败'));
+      reader.readAsDataURL(file);
+    });
+    setProgress(40, '检查远程状态...');
     let sha; try { sha = await GH.getFileSha(path); } catch (_) {}
-    setProgress(70, '提交中...');
+    setProgress(60, '上传中...');
     await GH.uploadFile(path, base64, sha);
     setProgress(100, '完成！');
     toast('上传成功', 'success');
@@ -222,6 +236,9 @@ async function confirmUpload() {
   } catch (e) {
     setProgress(0, '失败: ' + e.message);
     toast('上传失败: ' + e.message, 'error');
+    document.getElementById('upload-area').classList.remove('hidden');
+    document.getElementById('upload-progress').classList.add('hidden');
+    document.getElementById('btn-cancel-upload').disabled = false;
   }
 }
 function setProgress(pct, txt) {
