@@ -88,23 +88,36 @@ function renderFileSidebar() {
       <div class="file-badges">
         <select class="file-panel-sel" data-file="${f.name}">
           <option value="">未关联</option>
-          <option value="panel1">面板1-整商</option>
-          <option value="panel2">面板2-B端KPI</option>
+          <option value="panel1">整商面板</option>
+          <optgroup label="B端KPI">
+            <option value="panel2-new-sign">新签看板</option>
+            <option value="panel2-boom">爆单报名率</option>
+            <option value="panel2-surge">阶梯暴涨报名率</option>
+          </optgroup>
         </select>
       </div>
     </div>
   `).join('');
 
   // 恢复已关联状态
+  const ALL_PANEL_KEYS = ['panel1', 'panel2-new-sign', 'panel2-boom', 'panel2-surge'];
   document.querySelectorAll('.file-panel-sel').forEach(sel => {
     const fname = sel.dataset.file;
-    if (DataEngine._panelFiles.panel1.includes(fname)) sel.value = 'panel1';
-    else if (DataEngine._panelFiles.panel2.includes(fname)) sel.value = 'panel2';
+    for (const key of ALL_PANEL_KEYS) {
+      if (DataEngine._panelFiles[key] && DataEngine._panelFiles[key].includes(fname)) {
+        sel.value = key;
+        break;
+      }
+    }
     sel.onchange = function () {
-      DataEngine._panelFiles.panel1 = DataEngine._panelFiles.panel1.filter(f => f !== fname);
-      DataEngine._panelFiles.panel2 = DataEngine._panelFiles.panel2.filter(f => f !== fname);
-      if (this.value === 'panel1') DataEngine._panelFiles.panel1.push(fname);
-      else if (this.value === 'panel2') DataEngine._panelFiles.panel2.push(fname);
+      // 从所有面板移除该文件
+      for (const key of ALL_PANEL_KEYS) {
+        DataEngine._panelFiles[key] = (DataEngine._panelFiles[key] || []).filter(f => f !== fname);
+      }
+      // 添加到选中面板
+      if (ALL_PANEL_KEYS.includes(this.value)) {
+        DataEngine._panelFiles[this.value].push(fname);
+      }
     };
   });
 }
@@ -166,7 +179,9 @@ function switchPanel(panelId, kpiType) {
   if (panelId === 'panel1') {
     refreshPanel1();
   } else if (panelId === 'panel2') {
-    ensureFilesLoaded('panel2').then(() => Render.renderPanel2());
+    const kpi = kpiType || state.p2.activeKPI || 'new-sign';
+    const subKey = 'panel2-' + kpi;
+    ensureFilesLoaded(subKey).then(() => Render.renderPanel2());
   }
 }
 
